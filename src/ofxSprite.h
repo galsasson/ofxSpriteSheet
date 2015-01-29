@@ -12,12 +12,8 @@
 #include <stdio.h>
 #include "ofMain.h"
 
-struct SpriteTexCoords
-{
-	ofVec2f val[4];
-};
 
-class ofxSprite
+class ofxSprite : public ofNode
 {
 public:
 
@@ -35,6 +31,8 @@ public:
 	};
 
 	void setup(ofTexture* tex, float spriteWidth, float spriteHeight, int numFrames);
+
+	void setAnchor(float x, float y);
 
 	void play();
 	void stop();
@@ -55,8 +53,18 @@ public:
 	void setFrameHold(int frames) { frameHold = frames; }
 	int getFrameHold() { return frameHold; }
 
+	void setTintColot(const ofColor& c) { tintColor = c; }
+	ofColor getTintColor() { return tintColor; }
+
 	void update();
 	void draw(float x=0, float y=0);
+
+	// use this together with bind/unbind to draw many sprites with the same texture
+	void drawNoBind(float x=0, float y=0);
+
+	// use this together with drawNoBind to draw many sprites with the same texture
+	void bindTex();
+	void unbindTex();
 
 private:
 	bool bInitialized;
@@ -65,7 +73,10 @@ private:
 	ofVec2f spriteSize;
 	LoopType loopType;
 	Direction direction;
+	ofColor tintColor;
 	bool bAnimating;
+
+	ofVec2f anchor;
 
 	int nFrames;
 	int previousFrame;
@@ -77,9 +88,8 @@ private:
 
 	int frameHoldCounter;
 
+	void setupSpriteVbo();
 	ofVbo vbo;
-	void setupSpriteCoords();
-	map<int, SpriteTexCoords> spriteCoords;
 
 	void initVbo();
 	void advanceFrame();

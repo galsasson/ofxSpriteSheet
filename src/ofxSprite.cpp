@@ -8,6 +8,8 @@
 
 #include "ofxSprite.h"
 
+#define USE_TRIANGLE_STRIP
+
 ofxSprite::ofxSprite()
 {
 	bInitialized = false;
@@ -16,10 +18,10 @@ ofxSprite::ofxSprite()
 void ofxSprite::setup(ofTexture* tex, float spriteWidth, float spriteHeight, int numFrames)
 {
 	sheetTex = tex;
-	ofEnableArbTex();
 	spriteSize = ofVec2f(spriteWidth, spriteHeight);
 	loopType = LOOP_NORMAL;
 	direction = FORWARD;
+	tintColor = ofColor(255);
 	bAnimating = false;
 
 	frameHold = 2;
@@ -29,9 +31,14 @@ void ofxSprite::setup(ofTexture* tex, float spriteWidth, float spriteHeight, int
 	startFrame = 0;
 	endFrame = nFrames-1;
 
-	setupSpriteCoords();
+	setupSpriteVbo();
 
 	bInitialized = true;
+}
+
+void ofxSprite::setAnchor(float x, float y)
+{
+	anchor = ofVec2f(x, y);
 }
 
 void ofxSprite::play()
@@ -95,51 +102,122 @@ void ofxSprite::draw(float x, float y)
 		return;
 	}
 	
+	sheetTex->bind();
+
+	drawNoBind();
+
+	sheetTex->unbind();
+}
+
+void ofxSprite::drawNoBind(float x, float y)
+{
+	if (!bInitialized) {
+		return;
+	}
+
 	ofPushMatrix();
 	ofTranslate(x, y);
 
-	SpriteTexCoords& coords = spriteCoords[currentFrame];
+	ofMultMatrix(getGlobalTransformMatrix());
 
-	ofSetColor(255);
+	ofTranslate(-anchor);
 
-	sheetTex->bind();
+	ofSetColor(tintColor);
 
-	glBegin(GL_QUADS);
-	glTexCoord2f(coords.val[0].x, coords.val[0].y);
-	glVertex2f(0, 0);
-	glTexCoord2f(coords.val[1].x, coords.val[1].y);
-	glVertex2f(spriteSize.x, 0);
-	glTexCoord2f(coords.val[2].x, coords.val[2].y);
-	glVertex2f(spriteSize.x, spriteSize.y);
-	glTexCoord2f(coords.val[3].x, coords.val[3].y);
-	glVertex2f(0, spriteSize.y);
-	glEnd();
-
-	sheetTex->unbind();
+#ifdef USE_TRIANGLE_STRIP
+	vbo.draw(GL_TRIANGLE_STRIP, currentFrame*4, 4);
+#else
+	vbo.draw(GL_TRIANGLES, currentFrame*6, 6);
+#endif
 
 	ofPopMatrix();
 }
 
-void ofxSprite::setupSpriteCoords()
+void ofxSprite::bindTex()
 {
-	ofVec2f origin(0, 0);
+	if (sheetTex) {
+		sheetTex->bind();
+	}
+}
 
-	for (int i=0; i<nFrames; i++) {
-		SpriteTexCoords coords;
-		coords.val[0] = origin;
-		coords.val[1] = origin + ofVec2f(spriteSize.x, 0);
-		coords.val[2] = origin + ofVec2f(spriteSize.x, spriteSize.y);
-		coords.val[3] = origin + ofVec2f(0, spriteSize.y);
-		spriteCoords[i] = coords;
+void ofxSprite::unbindTex()
+{
+	if (sheetTex) {
+		sheetTex->unbind();
+	}
+}
+
+void ofxSprite::setupSpriteVbo()
+{
+	vector<ofVec3f> verts;
+	vector<ofVec2f> texCoords;
+
+	float visibleSize = 1;
+
+	ofVec2f tlVec(0, 0);
+	ofVec2f trVec(spriteSize.x*0.95f, 0);
+	ofVec2f blVec(0, spriteSize.y*0.95f);
+	ofVec2f brVec(spriteSize.x*0.95f, spriteSize.y*0.95f);
+
+	ofVec2f origin(0, 0);
+	for (int i=0; i<nFrames; i++)
+	{
+#ifdef USE_TRIANGLE_STRIP
+		// first triangle
+		verts.push_back(ofVec2f(0, 0));
+		texCoords.push_back(origin);
+
+		verts.push_back(ofVec2f(visibleSize, 0));
+		texCoords.push_back(origin + trVec);
+
+		verts.push_back(ofVec2f(0, visibleSize));
+		texCoords.push_back(origin + blVec);
+
+		verts.push_back(ofVec2f(visibleSize, visibleSize));
+		texCoords.push_back(origin + brVec);
+
+
+#else								// GL_TRIANGLES
+		// first triangle
+		verts.push_back(ofVec2f(0, 0));
+		texCoords.push_back(origin);
+
+		verts.push_back(ofVec2f(visibleSize, 0));
+		texCoords.push_back(origin + trVec);
+
+		verts.push_back(ofVec2f(visibleSize, visibleSize));
+		texCoords.push_back(origin + brVec);
+
+
+
+		// second triangle
+		verts.push_back(ofVec2f(visibleSize, visibleSize));
+		texCoords.push_back(origin + brVec);
+
+		verts.push_back(ofVec2f(0, visibleSize));
+		texCoords.push_back(origin + blVec);
+
+		verts.push_back(ofVec2f(0, 0));
+		texCoords.push_back(origin);
+#endif
+
 
 		// advance origin
 		origin.x += spriteSize.x;
+#ifdef TARGET_OPENGLES
+		if (origin.x + spriteSize.x > 1) { 		// normalized texture coords
+#else
 		if (origin.x + spriteSize.x > sheetTex->getWidth()) {
+#endif
 			origin.y += spriteSize.y;
 			origin.x = 0;
 		}
 	}
+
+	vbo.setVertexData(&verts[0], verts.size(), GL_STATIC_DRAW);
+	vbo.setTexCoordData(&texCoords[0], texCoords.size(), GL_STATIC_DRAW);
 }
+
 
 void ofxSprite::advanceFrame()
 {
@@ -147,18 +225,20 @@ void ofxSprite::advanceFrame()
 
 		if (currentFrame == endFrame) {
 
-			if (loopType == LOOP_NONE) {
+			switch (loopType) {
 
-				stop();
-			}
-			else if (loopType == LOOP_NORMAL) {
+				case LOOP_NONE:
+					stop();
+					break;
 
-				setFrame(startFrame);
-			}
-			else if (loopType == LOOP_PINGPONG) {
+				case LOOP_NORMAL:
+					setFrame(startFrame);
+					break;
 
-				direction = BACKWARD;
-				setFrame(currentFrame-1);
+				case LOOP_PINGPONG:
+					direction = BACKWARD;
+					setFrame(currentFrame-1);
+					break;
 			}
 		}
 		else {
@@ -169,18 +249,19 @@ void ofxSprite::advanceFrame()
 
 		if (currentFrame == startFrame) {
 
-			if (loopType == LOOP_NONE) {
+			switch (loopType) {
+				case LOOP_NONE:
+					stop();
+					break;
 
-				stop();
-			}
-			else if (loopType == LOOP_NORMAL) {
+				case LOOP_NORMAL:
+					setFrame(endFrame);
+					break;
 
-				setFrame(endFrame);
-			}
-			else if (loopType == LOOP_PINGPONG) {
-
-				direction = FORWARD;
-				setFrame(currentFrame+1);
+				case LOOP_PINGPONG:
+					direction = FORWARD;
+					setFrame(currentFrame+1);
+					break;
 			}
 		}
 		else {
