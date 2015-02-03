@@ -62,6 +62,8 @@ public:
 	// use this together with bind/unbind to draw many sprites with the same texture
 	void drawNoBind(float x=0, float y=0);
 
+	// use this to draw without push/pop matrix
+
 	// use this together with drawNoBind to draw many sprites with the same texture
 	void bindTex();
 	void unbindTex();

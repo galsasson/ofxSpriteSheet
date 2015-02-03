@@ -116,7 +116,7 @@ void ofxSprite::drawNoBind(float x, float y)
 	}
 
 	ofPushMatrix();
-	ofTranslate(x, y);
+//	ofTranslate(x, y);
 
 	ofMultMatrix(getGlobalTransformMatrix());
 
